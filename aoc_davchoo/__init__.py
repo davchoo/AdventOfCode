@@ -2,8 +2,10 @@ from importlib import import_module
 from argparse import ArgumentParser
 from aocd.models import Puzzle
 from time import perf_counter
-from sys import exc_info
-
+from sys import exc_info, exit
+from os import environ
+from pathlib import Path
+import json
 
 def solve(year, day, data):
     mod_name = f"aoc_davchoo.{year}.day{day}"
@@ -17,8 +19,28 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--year", type=int, required=True)
     parser.add_argument("--days", nargs="+", action="extend", type=int)
+    parser.add_argument("--token")
+    parser.add_argument("--user")
 
     args = parser.parse_args()
+
+    if args.token is not None:
+        environ["AOC_SESSION"] = args.token
+
+    if args.user is not None:
+        token_file = Path.home().joinpath(".config/aocd/tokens.json")
+        if token_file.exists() and token_file.is_file():
+            with token_file.open("r") as file:
+                token_json = json.loads(file.read())
+                if args.user in token_json:
+                    environ["AOC_SESSION"] = token_json[args.user]
+                else:
+                    print(f"User {args.user} does not exist in tokens.json")
+                    exit(-1)
+        else:
+            print("~/.config/aocd/tokens.json doesn't exist")
+            exit(-2)
+
     if args.days is None:
         args.days = range(1, 26)
 
