@@ -7,6 +7,7 @@ from os import environ
 from pathlib import Path
 import json
 
+
 def solve(year, day, data):
     mod_name = f"aoc_davchoo.{year}.day{day}"
     mod = import_module(mod_name)
@@ -57,3 +58,4 @@ if __name__ == "__main__":
             print(f"{elasped_time:.2f}s {args.year}/{day} - {puzzle.title} Part A: {part_a}   Part B: {part_b}")
         except:
             print(f"      {args.year}/{day} - {puzzle.title} - {exc_info()[1]}")
+            raise exc_info()[1]
