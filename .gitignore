@@ -1,2 +1,5 @@
 .idea/
 venv/
+aoc_davchoo.egg-info/
+build/
+dist/
