@@ -1,33 +1,125 @@
-from more_itertools import take
+class IntCodeState:
+    def __init__(self):
+        self.ip = 0
+
+        self.memory = []
+
+        self.output = []
+        self.input = []
+        self.iter_input = iter(self.input)
+
+        self.current_opcode = 0
+        self.parameters = []
+        self.addressing_modes = []
 
 
-def add(ip, memory):
-    # Add Source address, Source Address, Destination Address
-    src1, src2, dst = take(3, ip)
-    memory[dst] = memory[src1] + memory[src2]
+def read(position, addressing_mode, state: IntCodeState):
+    if addressing_mode == 0:
+        # Position Mode
+        return state.memory[position]
+    elif addressing_mode == 1:
+        # Immediate Mode
+        return position
 
 
-def mul(ip, memory):
-    # Multiply Source address, Source Address, Destination
-    src1, src2, dst = take(3, ip)
-    memory[dst] = memory[src1] * memory[src2]
+def read_parameters(num_parameters, state: IntCodeState):
+    return (read(pos, mode, state) for pos, mode in zip(state.parameters[:num_parameters], state.addressing_modes))
+
+
+def add(state: IntCodeState):
+    src1, src2 = read_parameters(2, state)
+    dst = state.parameters[2]
+    state.memory[dst] = src1 + src2
+
+
+def mul(state: IntCodeState):
+    src1, src2 = read_parameters(2, state)
+    dst = state.parameters[2]
+    state.memory[dst] = src1 * src2
+
+
+def read_input(state: IntCodeState):
+    dst = state.parameters[0]
+    state.memory[dst] = next(state.iter_input)
+
+
+def output_value(state: IntCodeState):
+    value = next(read_parameters(1, state))
+    state.output.append(value)
+
+
+def jit(state: IntCodeState):
+    value, jmp_target = read_parameters(2, state)
+    if value != 0:
+        state.ip = jmp_target
+
+
+def jif(state: IntCodeState):
+    value, jmp_target = read_parameters(2, state)
+    if value == 0:
+        state.ip = jmp_target
+
+
+def tlt(state: IntCodeState):
+    src1, src2 = read_parameters(2, state)
+    dst = state.parameters[2]
+
+    if src1 < src2:
+        state.memory[dst] = 1
+    else:
+        state.memory[dst] = 0
+
+
+def teq(state: IntCodeState):
+    src1, src2 = read_parameters(2, state)
+    dst = state.parameters[2]
+
+    if src1 == src2:
+        state.memory[dst] = 1
+    else:
+        state.memory[dst] = 0
+
+
+def halt(state: IntCodeState):
+    pass
 
 
 opcode_map = {
-    1: add,
-    2: mul,
-    99: lambda x, y: None  # Halt
+    1: (add, 3),
+    2: (mul, 3),
+    3: (read_input, 1),
+    4: (output_value, 1),
+    5: (jit, 2),
+    6: (jif, 2),
+    7: (tlt, 3),
+    8: (teq, 3),
+    99: (halt, 0)
 }
 
 
-def run_program(memory):
-    ip = iter(memory)
-    current_opcode = next(ip)
-    while True:
-        opcode_map[current_opcode](ip, memory)
-        if current_opcode == 99:
-            # Halt
-            break
-        current_opcode = next(ip)
+def run_program(memory, user_input=None):
+    if user_input is None:
+        user_input = []
 
-    return memory[0], memory
+    state = IntCodeState()
+    state.memory = memory[::]
+    state.input = user_input
+    state.iter_input = iter(state.input)
+
+    while True:
+        opcode = state.memory[state.ip]
+        state.current_opcode = opcode % 100
+        state.addressing_modes = opcode // 100
+        state.addressing_modes = [int(digit) for digit in str(state.addressing_modes).zfill(4)][::-1]
+
+        state.ip += 1
+
+        opcode_func, num_parameters = opcode_map[state.current_opcode]
+        state.parameters = state.memory[state.ip:state.ip + num_parameters]
+        state.ip += num_parameters
+
+        opcode_func(state)
+        if state.current_opcode == 99:
+            break
+
+    return state.memory, state.output
