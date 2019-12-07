@@ -1,13 +1,8 @@
-from .intcode import run_program
-
-
-def process_data(data):
-    program = list(map(int, data.split(",")))
-    return program
+from .intcode import run_program, load_program
 
 
 def solve_a(data):
-    program = process_data(data)
+    program = load_program(data)
 
     program[1] = 12
     program[2] = 2
@@ -16,7 +11,7 @@ def solve_a(data):
 
 
 def solve_b(data):
-    program = process_data(data)
+    program = load_program(data)
     for noun in range(100):
         for verb in range(100):
             program[1] = noun

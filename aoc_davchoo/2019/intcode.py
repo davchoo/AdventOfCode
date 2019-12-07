@@ -1,8 +1,8 @@
 class IntCodeState:
-    def __init__(self):
+    def __init__(self, memory):
         self.ip = 0
 
-        self.memory = []
+        self.memory = memory[::]
 
         self.output = []
         self.input = []
@@ -11,6 +11,15 @@ class IntCodeState:
         self.current_opcode = 0
         self.parameters = []
         self.addressing_modes = []
+
+        self.halt = False
+        self.waiting_io = False
+        self.wait_on_output = False
+
+    def set_input(self, user_input):
+        self.input = user_input
+        self.iter_input = iter(user_input)
+        self.waiting_io = False
 
 
 def read(position, addressing_mode, state: IntCodeState):
@@ -40,12 +49,19 @@ def mul(state: IntCodeState):
 
 def read_input(state: IntCodeState):
     dst = state.parameters[0]
-    state.memory[dst] = next(state.iter_input)
+    try:
+        state.memory[dst] = next(state.iter_input)
+    except StopIteration:
+        # Wait if we run out of input values
+        state.ip -= 2  # Rerun input opcode
+        state.waiting_io = True
 
 
 def output_value(state: IntCodeState):
     value = next(read_parameters(1, state))
     state.output.append(value)
+    if state.wait_on_output:
+        state.waiting_io = True
 
 
 def jit(state: IntCodeState):
@@ -81,7 +97,7 @@ def teq(state: IntCodeState):
 
 
 def halt(state: IntCodeState):
-    pass
+    state.halt = True
 
 
 opcode_map = {
@@ -97,15 +113,24 @@ opcode_map = {
 }
 
 
+def load_program(text):
+    program = list(map(int, text.split(",")))
+    return program
+
+
 def run_program(memory, user_input=None):
     if user_input is None:
         user_input = []
 
-    state = IntCodeState()
-    state.memory = memory[::]
-    state.input = user_input
-    state.iter_input = iter(state.input)
+    state = IntCodeState(memory)
+    state.set_input(user_input)
 
+    run_with_state(state)
+
+    return state.memory, state.output
+
+
+def run_with_state(state: IntCodeState):
     while True:
         opcode = state.memory[state.ip]
         state.current_opcode = opcode % 100
@@ -119,7 +144,5 @@ def run_program(memory, user_input=None):
         state.ip += num_parameters
 
         opcode_func(state)
-        if state.current_opcode == 99:
+        if state.halt or state.waiting_io:
             break
-
-    return state.memory, state.output
