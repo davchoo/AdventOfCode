@@ -1,8 +1,12 @@
+import collections
+
+
 class IntCodeState:
     def __init__(self, memory):
         self.ip = 0
 
-        self.memory = memory[::]
+        self.memory = collections.defaultdict(int)
+        self.memory.update(enumerate(memory))
 
         self.output = []
         self.input = []
@@ -11,6 +15,7 @@ class IntCodeState:
         self.current_opcode = 0
         self.parameters = []
         self.addressing_modes = []
+        self.relative_base = 0
 
         self.halt = False
         self.waiting_io = False
@@ -29,6 +34,18 @@ def read(position, addressing_mode, state: IntCodeState):
     elif addressing_mode == 1:
         # Immediate Mode
         return position
+    elif addressing_mode == 2:
+        # Relative Mode
+        return state.memory[position + state.relative_base]
+
+
+def write(position, value, addressing_mode, state: IntCodeState):
+    if addressing_mode == 0:
+        # Position Mode
+        state.memory[position] = value
+    elif addressing_mode == 2:
+        # Relative Mode
+        state.memory[position + state.relative_base] = value
 
 
 def read_parameters(num_parameters, state: IntCodeState):
@@ -38,19 +55,19 @@ def read_parameters(num_parameters, state: IntCodeState):
 def add(state: IntCodeState):
     src1, src2 = read_parameters(2, state)
     dst = state.parameters[2]
-    state.memory[dst] = src1 + src2
+    write(dst, src1 + src2, state.addressing_modes[2], state)
 
 
 def mul(state: IntCodeState):
     src1, src2 = read_parameters(2, state)
     dst = state.parameters[2]
-    state.memory[dst] = src1 * src2
+    write(dst, src1 * src2, state.addressing_modes[2], state)
 
 
 def read_input(state: IntCodeState):
     dst = state.parameters[0]
     try:
-        state.memory[dst] = next(state.iter_input)
+        write(dst, next(state.iter_input), state.addressing_modes[0], state)
     except StopIteration:
         # Wait if we run out of input values
         state.ip -= 2  # Rerun input opcode
@@ -81,9 +98,9 @@ def tlt(state: IntCodeState):
     dst = state.parameters[2]
 
     if src1 < src2:
-        state.memory[dst] = 1
+        write(dst, 1, state.addressing_modes[2], state)
     else:
-        state.memory[dst] = 0
+        write(dst, 0, state.addressing_modes[2], state)
 
 
 def teq(state: IntCodeState):
@@ -91,9 +108,14 @@ def teq(state: IntCodeState):
     dst = state.parameters[2]
 
     if src1 == src2:
-        state.memory[dst] = 1
+        write(dst, 1, state.addressing_modes[2], state)
     else:
-        state.memory[dst] = 0
+        write(dst, 0, state.addressing_modes[2], state)
+
+
+def adj_rel_base(state: IntCodeState):
+    val, = read_parameters(1, state)
+    state.relative_base += val
 
 
 def halt(state: IntCodeState):
@@ -109,6 +131,7 @@ opcode_map = {
     6: (jif, 2),
     7: (tlt, 3),
     8: (teq, 3),
+    9: (adj_rel_base, 1),
     99: (halt, 0)
 }
 
@@ -140,7 +163,7 @@ def run_with_state(state: IntCodeState):
         state.ip += 1
 
         opcode_func, num_parameters = opcode_map[state.current_opcode]
-        state.parameters = state.memory[state.ip:state.ip + num_parameters]
+        state.parameters = [state.memory[state.ip + offset] for offset in range(num_parameters)]
         state.ip += num_parameters
 
         opcode_func(state)
