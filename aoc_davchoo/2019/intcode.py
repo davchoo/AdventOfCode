@@ -20,6 +20,7 @@ class IntCodeState:
         self.halt = False
         self.waiting_io = False
         self.wait_on_output = False
+        self.io_direction = ""
 
     def set_input(self, user_input):
         self.input = user_input
@@ -72,6 +73,7 @@ def read_input(state: IntCodeState):
         # Wait if we run out of input values
         state.ip -= 2  # Rerun input opcode
         state.waiting_io = True
+        state.io_direction = "Read"
 
 
 def output_value(state: IntCodeState):
@@ -79,6 +81,7 @@ def output_value(state: IntCodeState):
     state.output.append(value)
     if state.wait_on_output:
         state.waiting_io = True
+        state.io_direction = "Write"
 
 
 def jit(state: IntCodeState):
