@@ -2,8 +2,8 @@ from collections import deque
 
 from more_itertools import first_true
 
-from .intcode import load_program, run_program, IntCodeState, run_with_state
-from copy import deepcopy, copy
+from .intcode import load_program, IntCodeMachine
+from copy import deepcopy
 
 direction_offset = {
     "N": (1, (0, -1)),
@@ -13,17 +13,17 @@ direction_offset = {
 }
 
 
-def map_out_area(program_state: IntCodeState):
-    run_with_state(program_state)
+def map_out_area(machine: IntCodeMachine):
+    machine.run()
 
     area_map = {(0, 0): (0, 1)}  # Pos: (Distance, Status)
-    open_locations = deque([((0, 0), 0, program_state)])  # (Pos, Distance, State)
+    open_locations = deque([((0, 0), 0, machine)])  # (Pos, Distance, Machine)
     locations = {(0, 0)}
 
     while len(open_locations) > 0:
-        pos, distance, program_state = open_locations.pop()
-        if len(program_state.output) != 0:
-            status = program_state.output[-1]
+        pos, distance, machine = open_locations.pop()
+        status = machine.run()
+        if status is not None:
             area_map[pos] = (distance, status)
             if status == 0:
                 continue
@@ -31,14 +31,10 @@ def map_out_area(program_state: IntCodeState):
         for direction, (command, offset) in direction_offset.items():
             new_position = (pos[0] + offset[0], pos[1] + offset[1])
             if new_position not in locations:
-                # Make a shallow copy of the state and give it a copy of the memory
-                new_state: IntCodeState = copy(program_state)
-                new_state.memory = copy(new_state.memory)
-                new_state.output = []
+                new_machine: IntCodeMachine = deepcopy(machine)
+                new_machine.set_input(command)
 
-                new_state.set_input([command])
-                run_with_state(new_state)
-                open_locations.append((new_position, distance + 1, new_state))
+                open_locations.append((new_position, distance + 1, new_machine))
                 locations.add(new_position)
 
     return area_map
@@ -70,10 +66,10 @@ def create_oxygen_map(area_map):
 
 def create_map(data):
     program = load_program(data)
-    state = IntCodeState(program)
-    state.wait_on_output = True
+    machine = IntCodeMachine(program)
+    machine.return_output = True
 
-    area_map = map_out_area(state)
+    area_map = map_out_area(machine)
     return area_map
 
 

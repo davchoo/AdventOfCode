@@ -1,16 +1,20 @@
 import collections
+from copy import copy, deepcopy
 
 
-class IntCodeState:
-    def __init__(self, memory):
+class IntCodeMachine:
+    def __init__(self, memory, user_input=None):
         self.ip = 0
 
         self.memory = collections.defaultdict(int)
         self.memory.update(enumerate(memory))
 
         self.output = []
-        self.input = []
-        self.iter_input = iter(self.input)
+        self.input = None
+        self.iter_input = None
+        if user_input is None:
+            user_input = []
+        self.set_input(user_input)
 
         self.current_opcode = 0
         self.parameters = []
@@ -18,125 +22,141 @@ class IntCodeState:
         self.relative_base = 0
 
         self.halt = False
-        self.waiting_io = False
-        self.wait_on_output = False
-        self.io_direction = ""
+        self.return_output = False
+        self.waiting_input = False
+
+        # opcode: (function, number of parameters)
+        self.opcode_map = {
+            1: (IntCodeMachine.add, 3),
+            2: (IntCodeMachine.mul, 3),
+            3: (IntCodeMachine.read_input, 1),
+            4: (IntCodeMachine.output_value, 1),
+            5: (IntCodeMachine.jit, 2),
+            6: (IntCodeMachine.jif, 2),
+            7: (IntCodeMachine.tlt, 3),
+            8: (IntCodeMachine.teq, 3),
+            9: (IntCodeMachine.adj_rel_base, 1),
+            99: (IntCodeMachine.halt_machine, 0)
+        }
 
     def set_input(self, user_input):
+        if isinstance(user_input, int):
+            user_input = [user_input]
         self.input = user_input
         self.iter_input = iter(user_input)
-        self.waiting_io = False
+        self.waiting_input = False
 
+    def read(self, position, addressing_mode):
+        if addressing_mode == 0:
+            # Position Mode
+            return self.memory[position]
+        elif addressing_mode == 1:
+            # Immediate Mode
+            return position
+        elif addressing_mode == 2:
+            # Relative Mode
+            return self.memory[position + self.relative_base]
 
-def read(position, addressing_mode, state: IntCodeState):
-    if addressing_mode == 0:
-        # Position Mode
-        return state.memory[position]
-    elif addressing_mode == 1:
-        # Immediate Mode
-        return position
-    elif addressing_mode == 2:
-        # Relative Mode
-        return state.memory[position + state.relative_base]
+    def write(self, position, value, addressing_mode):
+        if addressing_mode == 0:
+            # Position Mode
+            self.memory[position] = value
+        elif addressing_mode == 2:
+            # Relative Mode
+            self.memory[position + self.relative_base] = value
 
+    def read_parameters(self, num_parameters):
+        return (self.read(pos, mode) for pos, mode in zip(self.parameters[:num_parameters], self.addressing_modes))
 
-def write(position, value, addressing_mode, state: IntCodeState):
-    if addressing_mode == 0:
-        # Position Mode
-        state.memory[position] = value
-    elif addressing_mode == 2:
-        # Relative Mode
-        state.memory[position + state.relative_base] = value
+    def add(self):
+        src1, src2 = self.read_parameters(2)
+        dst = self.parameters[2]
+        self.write(dst, src1 + src2, self.addressing_modes[2])
 
+    def mul(self):
+        src1, src2 = self.read_parameters(2)
+        dst = self.parameters[2]
+        self.write(dst, src1 * src2, self.addressing_modes[2])
 
-def read_parameters(num_parameters, state: IntCodeState):
-    return (read(pos, mode, state) for pos, mode in zip(state.parameters[:num_parameters], state.addressing_modes))
+    def read_input(self):
+        dst = self.parameters[0]
+        try:
+            self.write(dst, next(self.iter_input), self.addressing_modes[0])
+        except StopIteration:
+            # Wait if we run out of input values
+            self.ip -= 2  # Rerun input opcode
+            self.waiting_input = True
 
+    def output_value(self):
+        value = next(self.read_parameters(1))
+        self.output.append(value)
 
-def add(state: IntCodeState):
-    src1, src2 = read_parameters(2, state)
-    dst = state.parameters[2]
-    write(dst, src1 + src2, state.addressing_modes[2], state)
+    def jit(self):
+        value, jmp_target = self.read_parameters(2)
+        if value != 0:
+            self.ip = jmp_target
 
+    def jif(self):
+        value, jmp_target = self.read_parameters(2)
+        if value == 0:
+            self.ip = jmp_target
 
-def mul(state: IntCodeState):
-    src1, src2 = read_parameters(2, state)
-    dst = state.parameters[2]
-    write(dst, src1 * src2, state.addressing_modes[2], state)
+    def tlt(self):
+        src1, src2 = self.read_parameters(2)
+        dst = self.parameters[2]
 
+        if src1 < src2:
+            self.write(dst, 1, self.addressing_modes[2])
+        else:
+            self.write(dst, 0, self.addressing_modes[2])
 
-def read_input(state: IntCodeState):
-    dst = state.parameters[0]
-    try:
-        write(dst, next(state.iter_input), state.addressing_modes[0], state)
-    except StopIteration:
-        # Wait if we run out of input values
-        state.ip -= 2  # Rerun input opcode
-        state.waiting_io = True
-        state.io_direction = "Read"
+    def teq(self):
+        src1, src2 = self.read_parameters(2)
+        dst = self.parameters[2]
 
+        if src1 == src2:
+            self.write(dst, 1, self.addressing_modes[2])
+        else:
+            self.write(dst, 0, self.addressing_modes[2])
 
-def output_value(state: IntCodeState):
-    value = next(read_parameters(1, state))
-    state.output.append(value)
-    if state.wait_on_output:
-        state.waiting_io = True
-        state.io_direction = "Write"
+    def adj_rel_base(self):
+        val, = self.read_parameters(1)
+        self.relative_base += val
 
+    def halt_machine(self):
+        self.halt = True
 
-def jit(state: IntCodeState):
-    value, jmp_target = read_parameters(2, state)
-    if value != 0:
-        state.ip = jmp_target
+    def run(self):
+        while True:
+            if self.halt or self.waiting_input:
+                return None
+            opcode = self.memory[self.ip]
+            self.current_opcode = opcode % 100
+            self.addressing_modes = opcode // 100
+            self.addressing_modes = [int(digit) for digit in str(self.addressing_modes).zfill(4)][::-1]
 
+            self.ip += 1
 
-def jif(state: IntCodeState):
-    value, jmp_target = read_parameters(2, state)
-    if value == 0:
-        state.ip = jmp_target
+            opcode_func, num_parameters = self.opcode_map[self.current_opcode]
+            self.parameters = [self.memory[self.ip + offset] for offset in range(num_parameters)]
+            self.ip += num_parameters
 
+            opcode_func(self)
 
-def tlt(state: IntCodeState):
-    src1, src2 = read_parameters(2, state)
-    dst = state.parameters[2]
+            if self.return_output and opcode_func == IntCodeMachine.output_value:
+                return self.output[-1]
 
-    if src1 < src2:
-        write(dst, 1, state.addressing_modes[2], state)
-    else:
-        write(dst, 0, state.addressing_modes[2], state)
+    def __deepcopy__(self, memodict=None):
+        if memodict is None:
+            memodict = {}
 
+        new_machine = copy(self)
+        new_machine.memory = deepcopy(self.memory, memo=memodict)
+        new_machine.input = deepcopy(self.input, memo=memodict)
+        new_machine.iter_input = deepcopy(self.iter_input, memo=memodict)
+        new_machine.output = deepcopy(self.output, memo=memodict)
 
-def teq(state: IntCodeState):
-    src1, src2 = read_parameters(2, state)
-    dst = state.parameters[2]
-
-    if src1 == src2:
-        write(dst, 1, state.addressing_modes[2], state)
-    else:
-        write(dst, 0, state.addressing_modes[2], state)
-
-
-def adj_rel_base(state: IntCodeState):
-    val, = read_parameters(1, state)
-    state.relative_base += val
-
-
-def halt(state: IntCodeState):
-    state.halt = True
-
-
-opcode_map = {
-    1: (add, 3),
-    2: (mul, 3),
-    3: (read_input, 1),
-    4: (output_value, 1),
-    5: (jit, 2),
-    6: (jif, 2),
-    7: (tlt, 3),
-    8: (teq, 3),
-    9: (adj_rel_base, 1),
-    99: (halt, 0)
-}
+        return new_machine
 
 
 def load_program(text):
@@ -145,30 +165,7 @@ def load_program(text):
 
 
 def run_program(memory, user_input=None):
-    if user_input is None:
-        user_input = []
+    machine = IntCodeMachine(memory, user_input)
+    machine.run()
 
-    state = IntCodeState(memory)
-    state.set_input(user_input)
-
-    run_with_state(state)
-
-    return state.memory, state.output
-
-
-def run_with_state(state: IntCodeState):
-    while True:
-        opcode = state.memory[state.ip]
-        state.current_opcode = opcode % 100
-        state.addressing_modes = opcode // 100
-        state.addressing_modes = [int(digit) for digit in str(state.addressing_modes).zfill(4)][::-1]
-
-        state.ip += 1
-
-        opcode_func, num_parameters = opcode_map[state.current_opcode]
-        state.parameters = [state.memory[state.ip + offset] for offset in range(num_parameters)]
-        state.ip += num_parameters
-
-        opcode_func(state)
-        if state.halt or state.waiting_io:
-            break
+    return machine.memory, machine.output

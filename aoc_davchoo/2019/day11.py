@@ -4,7 +4,7 @@ from operator import itemgetter
 import numpy as np
 from PIL import Image
 
-from .intcode import load_program, run_with_state, IntCodeState
+from .intcode import load_program, IntCodeMachine
 
 
 def run_robot(hull, program):
@@ -15,33 +15,30 @@ def run_robot(hull, program):
         3: (-1, 0)
     }
 
-    state = IntCodeState(program)
-    state.wait_on_output = True
-    run_with_state(state)
+    machine = IntCodeMachine(program)
+    machine.return_output = True
+    machine.run()
 
     robot_x = 0
     robot_y = 0
     robot_direction = 0
     num_colored = 0
 
-    while not state.halt:
+    while not machine.halt:
         if (robot_x, robot_y) not in hull:
             num_colored += 1  # Going to paint a new panel
         current_color = hull[robot_x, robot_y]
-        state.set_input([current_color])
-        run_with_state(state)
-        if state.halt:
+        machine.set_input(current_color)
+
+        new_color = machine.run()
+        if machine.halt:
             num_colored -= 1  # Didn't paint it yet
             break
-
-        new_color = state.output[-1]
         hull[robot_x, robot_y] = new_color
-        state.waiting_io = False
-        run_with_state(state)
-        if state.halt:
-            break
 
-        turn = state.output[-1]
+        turn = machine.run()
+        if machine.halt:
+            break
         if turn == 0:
             robot_direction -= 1
         else:

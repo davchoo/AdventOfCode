@@ -1,4 +1,4 @@
-from .intcode import run_program, run_with_state, IntCodeState, load_program
+from .intcode import run_program, IntCodeMachine, load_program
 from more_itertools import distinct_permutations
 from itertools import cycle
 
@@ -19,23 +19,19 @@ def solve_b(data):
     program = load_program(data)
     max_signal = -1e1000
     for phases in distinct_permutations(range(5, 10)):
-        program_states = [IntCodeState(program) for _ in range(5)]
+        machines = [IntCodeMachine(program) for _ in range(5)]
         # Give phase input to all amplifiers
-        for phase, state in zip(phases, program_states):
-            state.set_input([phase])
-            state.wait_on_output = True
-            run_with_state(state)
+        for phase, machine in zip(phases, machines):
+            machine.set_input(phase)
+            machine.return_output = True
+            machine.run()
 
         # Pass the output of each amplifier to the next one in a loop
-        input_signal = [0]
-        for state in cycle(program_states):
-            state.waiting_io = False
-            state.set_input(input_signal)
-            run_with_state(state)
-            if state.waiting_io:
-                input_signal = state.output
-                state.output = []
-            elif state.halt:
+        input_signal = 0
+        for machine in cycle(machines):
+            machine.set_input(input_signal)
+            input_signal = machine.run() or input_signal
+            if machine.halt:
                 break
-        max_signal = max(max_signal, input_signal[0])
+        max_signal = max(max_signal, input_signal)
     return max_signal
