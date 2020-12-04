@@ -6,6 +6,7 @@ from sys import exc_info, exit
 from os import environ
 from pathlib import Path
 import json
+from datetime import date
 
 
 def solve(year, day, data):
@@ -42,11 +43,14 @@ if __name__ == "__main__":
             print("~/.config/aocd/tokens.json doesn't exist")
             exit(-2)
 
+    today = date.today()
+
     if args.days is None:
-        args.days = range(1, 26)
+        if args.year == today.year:
+            args.days = range(1, today.day + 1)
 
     for day in args.days:
-        if day < 0 or day > 25:
+        if day < 0 or day > 25 or (args.year == today.year and day > today.day):
             print(f"Invalid Day {day}")
             continue
         puzzle = Puzzle(args.year, day)
